@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# In the following template TransitGatewayAttachmentIdFinder is a custom lambda resource which if invoked with vpnconnection reference, gives back the transitgateway attachment id.
+# This transit gateway attachment id could be further referenced anywhere in the cfn template such as a custom routetable, routes etc..
+
+Resources:
+  # Creates VPN connection
+  VPNConnection:
+    Type: AWS::EC2::VPNConnection
+    Properties:
+      Type: ipsec.1
+      StaticRoutesOnly: True
+      CustomerGatewayId: Modify-this-redacted-value
+      TransitGatewayId: Modify-this-redacted-value
+
+  # Invokes custom lambda function with above VPNConnection as argument to find the TGW attachment id and respond back. !GetAtt can be used to get the result.
+  TransitGatewayAttachmentIdFinder:
+    Type: "Custom::TransitGatewayAttachmentIdFinder"
+    Version: "1.0"
+    Properties:
+      ServiceToken: "Modify-this-with-lambda-ARN"
+      vpnID: !Ref VPNConnection
+
+  # lets create a non default TGW routetable
+  TgwRouteTableForVpnConnection:
+    Type: AWS::EC2::TransitGatewayRouteTable
+    Properties:
+      TransitGatewayId: Modify-this-redacted-value
+
+  # As an Example 1, lets associate the TGW attachment id to the above route table which is found from custom lambda resoure resouce called "TransitGatewayAttachmentIdFinder"
+  TgwRouteTableVpnAssociation:
+    Type: AWS::EC2::TransitGatewayRouteTableAssociation
+    Properties:
+      TransitGatewayAttachmentId: !GetAtt
+        - TransitGatewayAttachmentIdFinder
+        - TransitGatewayAttachmentId
+      TransitGatewayRouteTableId: !Ref TgwRouteTableForVpnConnection
+
+  # As an Example 2 lets add static routes 192.168.0.0/16 with destination as TransitGatewayAttachmentId that belongs to VPN connection
+  StaticRoutesOnTgwRoutetable:
+    Type: AWS::EC2::TransitGatewayRoute
+    Properties:
+      DestinationCidrBlock: 192.168.0.0/16
+      TransitGatewayAttachmentId: !GetAtt
+        - TransitGatewayAttachmentIdFinder
+        - TransitGatewayAttachmentId
+      TransitGatewayRouteTableId: !Ref TgwRouteTableForVpnConnection
+
+Outputs:
+  # The TransitGatewayAttachmentId of a VPNConnection resource could be referenced using !GetAtt where the first argument is the custom resource logical name, the second argument will be
+  # response data key name given by the lambda function, check line number 52 of lamda function.
+  TransitGatewayAttachmentId:
+    Description: TransitGatewayAttachmentId for the VPN Connection
+    Value: !GetAtt
+      - TransitGatewayAttachmentIdFinder
+      - TransitGatewayAttachmentId
